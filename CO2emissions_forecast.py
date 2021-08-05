@@ -12,6 +12,7 @@ from zipfile import ZipFile
 from urllib.request import urlopen
 import matplotlib.pyplot as plt
 from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.stattools import adfuller
 
 ## Log file
 timestamp = datetime.today().strftime('%Y%m%d_%H%M')
@@ -57,6 +58,7 @@ def arima(dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps):
     # DataFrames to be filled:
     CO2_emissions_forecast = dataset.iloc[:, 0:2]
     CO2_emissions_forecast["DF_test_p_val"], CO2_emissions_forecast["significant"] = [np.nan, np.nan]
+    CO2_emissions_forecast["DF_test_p_val_diff1"], CO2_emissions_forecast["significant_diff1"] = [np.nan, np.nan]
     for t in range(len(pred_dates)-1):
         CO2_emissions_forecast[str(pred_dates.year.values[t])] = np.nan
     
@@ -81,6 +83,21 @@ def arima(dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps):
         training_data = training_data.astype('float64')
         test_data = test_data.astype('float64')
 
+        # Dicky-Fuller test to test for stationarity:
+        DF_test = adfuller(training_data)
+        DF_test_diff = adfuller(training_data.diff().dropna())
+
+        CO2_emissions_forecast["DF_test_p_val"][i] = DF_test[1]
+        CO2_emissions_forecast["DF_test_p_val_diff1"][i] = DF_test_diff[1]
+
+        for s in ["significant", "significant_diff1"]:
+            if DF_test[1] <= 0.05:
+                CO2_emissions_forecast[s][i] = True
+            elif DF_test[1] > 0.05:
+                CO2_emissions_forecast[s][i] = False
+            else:
+                CO2_emissions_forecast[s][i] = np.nan
+            
         # ARIMA(AR_lags,diff,MA_lags) model
         # GROWTH RATE OF POPULATION, GDP GROWTH RATE
         arima_model = SARIMAX(training_data.values, order = (AR_lags,diff,MA_lags))
@@ -91,4 +108,8 @@ def arima(dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps):
         arima_value_forecast = arima_results.get_forecast(steps=forecast_steps).predicted_mean
         confidence_intervals = arima_results.get_forecast(steps=forecast_steps).conf_int()
         low_int, high_int = zip(*confidence_intervals)
+
+        
+
+
 
