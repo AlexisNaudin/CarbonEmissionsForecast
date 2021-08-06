@@ -13,6 +13,7 @@ from urllib.request import urlopen
 import matplotlib.pyplot as plt
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.stattools import adfuller
+from pandas.tseries import offsets
 
 ## Log file
 timestamp = datetime.today().strftime('%Y%m%d_%H%M')
@@ -59,25 +60,26 @@ def arima(dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps):
     CO2_emissions_forecast = dataset.iloc[:, 0:2]
     CO2_emissions_forecast["DF_test_p_val"], CO2_emissions_forecast["significant"] = [np.nan, np.nan]
     CO2_emissions_forecast["DF_test_p_val_diff1"], CO2_emissions_forecast["significant_diff1"] = [np.nan, np.nan]
-    for t in range(len(pred_dates)-1):
+    # Add a new column for each forecasted date
+    for t in range(len(pred_dates)):
         CO2_emissions_forecast[str(pred_dates.year.values[t])] = np.nan
     
     CO2_emissions_conf_int = dataset.iloc[:, 0:2]
     CO2_emissions_conf_int["Low_int"], CO2_emissions_conf_int["High_int"] = ["Low", "High"]
-    #CO2_emissions_conf_int["val"] = np.nan
     CO2_emissions_conf_int = CO2_emissions_conf_int.reset_index()
     CO2_emissions_conf_int = pd.melt(CO2_emissions_conf_int, id_vars=['Country Name', 'Country Code'], value_vars=['Low_int', 'High_int'])
     CO2_emissions_conf_int.pop('value')
 
-    for t in range(len(pred_dates)-1):
+    # Add a new column for each forecasted date
+    for t in range(len(pred_dates)):
         CO2_emissions_conf_int[str(pred_dates.year.values[t])] = np.nan
 
-    for i in range(len(dataset)-1):
+    # Estimating the model for each country (row) of the dataset:
+    for i in range(len(dataset)):
         training_data = dataset.iloc[i,dataset.columns.get_loc("1990"):dataset.columns.get_loc(str(train_split_year+1))]
         test_data = dataset.iloc[i,dataset.columns.get_loc(str(train_split_year+1)):]
 
         # Set the index as a date object and values as float64:
-        from pandas.tseries import offsets
         training_data.index = pd.to_datetime(training_data.index, format='%Y') + offsets.YearEnd()
         test_data.index = pd.to_datetime(test_data.index, format='%Y') + offsets.YearEnd()
         training_data = training_data.astype('float64')
@@ -108,6 +110,17 @@ def arima(dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps):
         arima_value_forecast = arima_results.get_forecast(steps=forecast_steps).predicted_mean
         confidence_intervals = arima_results.get_forecast(steps=forecast_steps).conf_int()
         low_int, high_int = zip(*confidence_intervals)
+
+        for v in range(forecast_steps):
+            CO2_emissions_forecast[str(pred_dates.year.values[v])][i] = arima_value_forecast[v]
+            
+            if i < len(dataset):
+                CO2_emissions_conf_int[str(pred_dates.year.values[v])][i] = low_int[v]
+            elif i+len(dataset) >= len(dataset):
+                CO2_emissions_conf_int[str(pred_dates.year.values[v])][i+len(dataset)] = high_int[v]
+
+
+
 
         
 
