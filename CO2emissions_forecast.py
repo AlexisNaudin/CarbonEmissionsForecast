@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.stattools import adfuller
 from pandas.tseries import offsets
+import csv
 
 ## Log file
 timestamp = datetime.today().strftime('%Y%m%d_%H%M')
@@ -30,9 +31,9 @@ zipfile.namelist()
 names = {}
 for name in zipfile.namelist():
     if name == "API_EN.ATM.CO2E.PC_DS2_en_csv_v2_2708833.csv":
-        names[name.split('_')[0]+name.split('_')[1]] = pd.read_csv(zipfile.open(name), skiprows=4)
+        names[name.split('_')[0]+name.split('_')[1]] = pd.read_csv(zipfile.open(name), sep = ',', quoting=csv.QUOTE_ALL, skiprows=4, engine='python')
     else:
-        names[name.split('_')[0]+name.split('_')[1]] = pd.read_csv(zipfile.open(name))
+        names[name.split('_')[0]+name.split('_')[1]] = pd.read_csv(zipfile.open(name), sep = ',', quoting=csv.QUOTE_ALL, engine='python')
 
 ####################
 # Prepare the data #
@@ -51,6 +52,8 @@ CO2_emissions_1990_2018 = CO2_emissions_1960_2018
 CO2_emissions_1990_2018.drop(CO2_emissions_1990_2018.columns[index_1:index_2], axis=1, inplace=True)
 # We drop the remaining countries with NaN values.
 CO2_emissions_1990_2018 = CO2_emissions_1990_2018.dropna()
+CO2_emissions_1990_2018 = CO2_emissions_1990_2018.reset_index(drop=True)
+
 
 def arima(dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps):
 
@@ -89,16 +92,16 @@ def arima(dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps):
         DF_test = adfuller(training_data)
         DF_test_diff = adfuller(training_data.diff().dropna())
 
-        CO2_emissions_forecast["DF_test_p_val"][i] = DF_test[1]
-        CO2_emissions_forecast["DF_test_p_val_diff1"][i] = DF_test_diff[1]
+        CO2_emissions_forecast.loc[i,"DF_test_p_val"] = DF_test[1]
+        CO2_emissions_forecast.loc[i,"DF_test_p_val_diff1"] = DF_test_diff[1]
 
         for s in ["significant", "significant_diff1"]:
             if DF_test[1] <= 0.05:
-                CO2_emissions_forecast[s][i] = True
+                CO2_emissions_forecast.loc[i,s] = True
             elif DF_test[1] > 0.05:
-                CO2_emissions_forecast[s][i] = False
+                CO2_emissions_forecast.loc[i,s] = False
             else:
-                CO2_emissions_forecast[s][i] = np.nan
+                CO2_emissions_forecast.loc[i,s] = np.nan
             
         # ARIMA(AR_lags,diff,MA_lags) model
         # GROWTH RATE OF POPULATION, GDP GROWTH RATE
@@ -112,15 +115,19 @@ def arima(dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps):
         low_int, high_int = zip(*confidence_intervals)
 
         for v in range(forecast_steps):
-            CO2_emissions_forecast[str(pred_dates.year.values[v])][i] = arima_value_forecast[v]
-            
+            CO2_emissions_forecast.loc[i, str(pred_dates.year.values[v])] = arima_value_forecast[v]
+            # filling in for each forecasted date the estimated confidence intervals 
+            # (low int for the first half of the dataset and high int for the second)
             if i < len(dataset):
-                CO2_emissions_conf_int[str(pred_dates.year.values[v])][i] = low_int[v]
+                CO2_emissions_conf_int.loc[i,str(pred_dates.year.values[v])] = low_int[v]
             elif i+len(dataset) >= len(dataset):
-                CO2_emissions_conf_int[str(pred_dates.year.values[v])][i+len(dataset)] = high_int[v]
+                CO2_emissions_conf_int.loc[i+len(dataset),str(pred_dates.year.values[v])] = high_int[v]
+    return CO2_emissions_forecast, CO2_emissions_conf_int
 
+# dataset, AR_lags, diff, MA_lags, train_split_year, forecast_steps
+CO2_emissions_forecast, CO2_emissions_conf_int = arima(CO2_emissions_1990_2018, 2, 1, 2, 2016, 4)
 
-
+CO2_emissions_forecast.to_csv('C:/Users/Alexis/Documents/PythonProjects/CarbonEmissionsForecast/CO2_forecast.csv', index = False)
 
         
 
